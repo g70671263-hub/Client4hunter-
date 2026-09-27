@@ -3,441 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Client & Lead Finder</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <title>Client Hunter Pro</title>
     <style>
-        :root {
-            --bg-dark: #0f172a;
-            --card-bg: #1e293b;
-            --accent-blue: #38bdf8;
-            --accent-hover: #0284c7;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border-color: #334155;
-        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { text-align: center; color: #38bdf8; margin-bottom: 20px; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        input, button { padding: 12px 16px; border-radius: 8px; border: none; font-size: 15px; }
+        input { flex: 1; min-width: 200px; background: #1e293b; color: #fff; border: 1px solid #334155; }
+        button { background: #0284c7; color: white; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0369a1; }
+        
+        /* OPTION 3: TAB FILTERS STYLING */
+        .tabs-container { display: flex; gap: 10px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 5px; }
+        .tab-btn { background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 10px 18px; border-radius: 20px; cursor: pointer; white-space: nowrap; font-size: 14px; }
+        .tab-btn.active { background: #38bdf8; color: #0f172a; font-weight: bold; border-color: #38bdf8; }
+        .tab-btn .count { background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 10px; margin-left: 6px; font-size: 12px; }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Inter', sans-serif;
-        }
-
-        body {
-            background-color: var(--bg-dark);
-            color: var(--text-main);
-            min-height: 100vh;
-            padding: 20px 15px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 650px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 25px;
-            margin-top: 10px;
-        }
-
-        .header h1 {
-            font-size: 2rem;
-            color: var(--accent-blue);
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
-
-        .header p {
-            color: var(--text-muted);
-            font-size: 0.95rem;
-        }
-
-        .search-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 25px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-        }
-
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-            font-weight: 600;
-        }
-
-        .form-control {
-            width: 100%;
-            background-color: #0f172a;
-            border: 1px solid var(--border-color);
-            color: var(--text-main);
-            padding: 12px 14px;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .form-control:focus {
-            border-color: var(--accent-blue);
-        }
-
-        .btn-primary {
-            width: 100%;
-            background-color: var(--accent-blue);
-            color: #0f172a;
-            font-weight: 700;
-            border: none;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s;
-            margin-top: 8px;
-        }
-
-        .btn-primary:hover {
-            background-color: var(--accent-hover);
-            color: #ffffff;
-        }
-
-        .loader {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-        }
-
-        .spinner {
-            border: 3px solid var(--border-color);
-            border-top: 3px solid var(--accent-blue);
-            border-radius: 50%;
-            width: 32px;
-            height: 32px;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .results-container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .lead-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 16px;
-            transition: transform 0.2s, border-color 0.2s;
-        }
-
-        .lead-card:hover {
-            border-color: var(--accent-blue);
-        }
-
-        .lead-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-
-        .badge {
-            background-color: rgba(56, 189, 248, 0.15);
-            color: var(--accent-blue);
-            font-size: 0.75rem;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-weight: 600;
-        }
-
-        .lead-title {
-            font-size: 1.05rem;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: var(--text-main);
-        }
-
-        .lead-desc {
-            font-size: 0.88rem;
-            color: var(--text-muted);
-            margin-bottom: 12px;
-            line-height: 1.4;
-        }
-
-        .lead-actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .btn-sm {
-            padding: 8px 12px;
-            font-size: 0.82rem;
-            border-radius: 6px;
-            text-decoration: none;
-            font-weight: 600;
-            cursor: pointer;
-            border: none;
-        }
-
-        .btn-outline {
-            background: transparent;
-            border: 1px solid var(--accent-blue);
-            color: var(--accent-blue);
-        }
-
-        .btn-outline:hover {
-            background: var(--accent-blue);
-            color: #0f172a;
-        }
-
-        .btn-action {
-            background-color: var(--border-color);
-            color: var(--text-main);
-        }
-
-        .btn-action:hover {
-            background-color: #475569;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.85);
-            backdrop-filter: blur(4px);
-            justify-content: center;
-            align-items: center;
-            padding: 15px;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            width: 100%;
-            max-width: 550px;
-            padding: 20px;
-            box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .modal-title {
-            font-size: 1.1rem;
-            color: var(--accent-blue);
-            font-weight: 700;
-        }
-
-        .close-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-muted);
-            font-size: 1.5rem;
-            cursor: pointer;
-        }
-
-        .pitch-box {
-            width: 100%;
-            height: 180px;
-            background: #0f172a;
-            border: 1px solid var(--border-color);
-            color: var(--text-main);
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 0.9rem;
-            resize: none;
-            margin-bottom: 15px;
-            line-height: 1.4;
-        }
-
-        .error-msg {
-            color: #ef4444;
-            text-align: center;
-            font-size: 0.9rem;
-            margin-top: 10px;
-        }
+        .cache-badge { display: inline-block; background: #10b981; color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; }
+        
+        .leads-grid { display: grid; gap: 15px; }
+        .card { background: #1e293b; border-radius: 10px; padding: 18px; border: 1px solid #334155; position: relative; }
+        .card.hot-lead { border: 2px solid #ef4444; background: #1c1017; }
+        .badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 10px; }
+        .badge-hot { background: #ef4444; color: white; }
+        .badge-maps { background: #0284c7; color: white; }
+        .badge-other { background: #8b5cf6; color: white; }
+        .title { font-size: 18px; font-weight: bold; margin-bottom: 8px; color: #f1f5f9; }
+        .desc { font-size: 14px; color: #cbd5e1; margin-bottom: 12px; line-height: 1.4; }
+        .action-link { display: inline-block; color: #38bdf8; text-decoration: none; font-weight: bold; font-size: 14px; }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <div class="header">
-            <h1>AI Client & Lead Finder</h1>
-            <p>Find Client Requests & Local Businesses Across Any Country</p>
-        </div>
-
-        <div class="search-card">
-            <div class="form-group">
-                <label for="skill">Skill / Service Offered</label>
-                <input type="text" id="skill" class="form-control" value="Web Development" placeholder="e.g. Graphic Design, Web Development">
-            </div>
-
-            <div class="form-group">
-                <label for="country">Target Country (Manual Input)</label>
-                <input type="text" id="country" class="form-control" value="Pakistan" placeholder="e.g. Pakistan, USA, UAE">
-            </div>
-
-            <button id="searchBtn" class="btn-primary">Find Clients & Leads</button>
-        </div>
-
-        <div id="loader" class="loader">
-            <div class="spinner"></div>
-            <p style="color: var(--text-muted); font-size: 0.85rem;">Searching Google Maps, Social Networks & Job Feeds...</p>
-        </div>
-
-        <div id="errorMsg" class="error-msg"></div>
-
-        <div id="results" class="results-container"></div>
+<div class="container">
+    <h1>🚀 Client Hunter Pro</h1>
+    
+    <div class="search-box">
+        <input type="text" id="skillInput" placeholder="Skill (e.g. Web Development, SEO)">
+        <input type="text" id="countryInput" placeholder="Country (e.g. Pakistan)">
+        <button onclick="fetchLeads()">Search Leads</button>
     </div>
 
-    <!-- AI Pitch Modal -->
-    <div id="pitchModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div class="modal-title">✨ AI Proposal Generator</div>
-                <button class="close-btn" onclick="closeModal()">&times;</button>
-            </div>
-            <textarea id="pitchText" class="pitch-box" readonly>Generating proposal...</textarea>
-            <button class="btn-primary" onclick="copyPitch()">Copy Proposal to Clipboard</button>
-        </div>
+    <div id="cacheStatus"></div>
+
+    <!-- OPTION 3: TAB FILTERS UI -->
+    <div class="tabs-container" id="tabsContainer" style="display: none;">
+        <button class="tab-btn active" onclick="filterLeads('all', this)">All Leads <span class="count" id="cntAll">0</span></button>
+        <button class="tab-btn" onclick="filterLeads('hot', this)">🔥 Hot Clients <span class="count" id="cntHot">0</span></button>
+        <button class="tab-btn" onclick="filterLeads('maps', this)">📍 Google Maps <span class="count" id="cntMaps">0</span></button>
+        <button class="tab-btn" onclick="filterLeads('other', this)">🌐 Online Requests <span class="count" id="cntOther">0</span></button>
     </div>
 
-    <script>
-        const searchBtn = document.getElementById('searchBtn');
-        const skillInput = document.getElementById('skill');
-        const countryInput = document.getElementById('country');
-        const loader = document.getElementById('loader');
-        const resultsDiv = document.getElementById('results');
-        const errorMsg = document.getElementById('errorMsg');
-        const pitchModal = document.getElementById('pitchModal');
-        const pitchText = document.getElementById('pitchText');
+    <div class="leads-grid" id="leadsGrid"></div>
+</div>
 
-        searchBtn.addEventListener('click', fetchLeads);
+<script>
+    let allLeads = [];
 
-        async function fetchLeads() {
-            const skill = skillInput.value.trim();
-            const country = countryInput.value.trim();
+    async function fetchLeads() {
+        const skill = document.getElementById('skillInput').value || 'Web Development';
+        const country = document.getElementById('countryInput').value || 'Pakistan';
+        const grid = document.getElementById('leadsGrid');
+        const cacheDiv = document.getElementById('cacheStatus');
+        
+        grid.innerHTML = '<p style="text-align:center; color:#94a3b8;">Fetching maximum local businesses & client requests...</p>';
+        cacheDiv.innerHTML = '';
 
-            if (!skill) {
-                alert("Please enter a skill or service.");
-                return;
+        try {
+            const res = await fetch(`/api/leads?skill=${encodeURIComponent(skill)}&country=${encodeURIComponent(country)}`);
+            const data = await res.json();
+            
+            allLeads = data.leads || [];
+
+            if (data.is_cached) {
+                cacheDiv.innerHTML = '<span class="cache-badge">⚡ Instant Cache Response (15-Min System Active)</span>';
             }
 
-            loader.style.display = 'block';
-            resultsDiv.innerHTML = '';
-            errorMsg.innerText = '';
+            // Update Counts in Tabs
+            document.getElementById('cntAll').innerText = allLeads.length;
+            document.getElementById('cntHot').innerText = allLeads.filter(l => l.is_hot).length;
+            document.getElementById('cntMaps').innerText = allLeads.filter(l => l.lead_type === 'maps').length;
+            document.getElementById('cntOther').innerText = allLeads.filter(l => l.lead_type === 'other').length;
+            
+            document.getElementById('tabsContainer').style.display = 'flex';
+            
+            // Render All leads by default
+            renderCards(allLeads);
+        } catch (err) {
+            grid.innerHTML = '<p style="color:#ef4444; text-align:center;">Error fetching leads. Please try again.</p>';
+        }
+    }
 
-            try {
-                const response = await fetch(`/api/leads?skill=${encodeURIComponent(skill)}&country=${encodeURIComponent(country)}`);
-                if (!response.ok) {
-                    throw new Error(`Server status ${response.status}`);
-                }
-                const data = await response.json();
-                const leads = data.leads || [];
-
-                loader.style.display = 'none';
-
-                if (leads.length === 0) {
-                    resultsDiv.innerHTML = '<p style="text-align:center; color: var(--text-muted);">No leads found. Try changing your search query.</p>';
-                    return;
-                }
-
-                leads.forEach(lead => {
-                    const card = document.createElement('div');
-                    card.className = 'lead-card';
-                    card.innerHTML = `
-                        <div class="lead-header">
-                            <span class="badge">${escapeHtml(lead.platform || 'Verified Lead')}</span>
-                            <span style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(lead.time_ago || '')}</span>
-                        </div>
-                        <div class="lead-title">${escapeHtml(lead.title)}</div>
-                        <div class="lead-desc">${escapeHtml(lead.description)}</div>
-                        <div class="lead-actions">
-                            <a href="${lead.action_link}" target="_blank" class="btn-sm btn-action">View Opportunity ↗</a>
-                            <button class="btn-sm btn-outline" onclick="generatePitch('${escapeJs(lead.title)}', '${escapeJs(lead.description)}')">✨ AI Pitch</button>
-                        </div>
-                    `;
-                    resultsDiv.appendChild(card);
-                });
-
-            } catch (err) {
-                loader.style.display = 'none';
-                errorMsg.innerText = 'Failed to connect to backend server. Make sure your server is live.';
-                console.error(err);
-            }
+    function renderCards(leads) {
+        const grid = document.getElementById('leadsGrid');
+        if (!leads || leads.length === 0) {
+            grid.innerHTML = '<p style="text-align:center; color:#94a3b8;">No clients found in this category.</p>';
+            return;
         }
 
-        async function generatePitch(title, desc) {
-            pitchModal.style.display = 'flex';
-            pitchText.value = 'Connecting to Gemini AI to generate customized proposal...';
+        grid.innerHTML = leads.map(item => `
+            <div class="card ${item.is_hot ? 'hot-lead' : ''}">
+                <span class="badge ${item.is_hot ? 'badge-hot' : (item.lead_type === 'maps' ? 'badge-maps' : 'badge-other')}">
+                    ${item.badge || item.platform}
+                </span>
+                <div class="title">${item.title}</div>
+                <div class="desc">${item.description}</div>
+                <a class="action-link" href="${item.action_link}" target="_blank">Open Client Listing ↗</a>
+            </div>
+        `).join('');
+    }
 
-            try {
-                const res = await fetch('/api/ai_pitch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        lead_title: title,
-                        lead_desc: desc,
-                        portfolio: "https://myportfolio.com"
-                    })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    pitchText.value = data.pitch;
-                } else {
-                    pitchText.value = 'Error generating pitch: ' + (data.message || 'Unknown error');
-                }
-            } catch (e) {
-                pitchText.value = 'Failed to generate proposal.';
-            }
-        }
+    // TAB FILTERING LOGIC
+    function filterLeads(category, element) {
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        element.classList.add('active');
 
-        function closeModal() {
-            pitchModal.style.display = 'none';
+        if (category === 'all') {
+            renderCards(allLeads);
+        } else if (category === 'hot') {
+            renderCards(allLeads.filter(l => l.is_hot));
+        } else if (category === 'maps') {
+            renderCards(allLeads.filter(l => l.lead_type === 'maps'));
+        } else if (category === 'other') {
+            renderCards(allLeads.filter(l => l.lead_type === 'other'));
         }
+    }
+</script>
 
-        function copyPitch() {
-            pitchText.select();
-            document.execCommand('copy');
-            alert('Proposal copied to clipboard!');
-        }
-
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-
-        function escapeJs(str) {
-            if (!str) return '';
-            return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, ' ');
-        }
-    </script>
 </body>
-  </html>
-  
+</html>
