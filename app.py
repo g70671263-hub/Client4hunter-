@@ -1,6 +1,6 @@
 import os
 import re
-import random
+import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -8,7 +8,6 @@ import feedparser
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
-# Google GenAI SDK Import
 try:
     from google import genai
 except ImportError:
@@ -17,167 +16,242 @@ except ImportError:
 app = Flask(__name__, template_folder='templates')
 CORS(app)
 
-# Helper function to strip HTML tags
+# ==========================================
+# MEMORY CACHE (15 MIN TTL)
+# ==========================================
+LEADS_CACHE = {}
+CACHE_TIMEOUT = 900
+
+def get_from_cache(skill, country, niche):
+    cache_key = f"{skill.lower().strip()}_{country.lower().strip()}_{niche.lower().strip()}"
+    if cache_key in LEADS_CACHE:
+        cached_data, timestamp = LEADS_CACHE[cache_key]
+        if time.time() - timestamp < CACHE_TIMEOUT:
+            return cached_data
+        else:
+            del LEADS_CACHE[cache_key]
+    return None
+
+def save_to_cache(skill, country, niche, data):
+    cache_key = f"{skill.lower().strip()}_{country.lower().strip()}_{niche.lower().strip()}"
+    LEADS_CACHE[cache_key] = (data, time.time())
+
 def clean_html(raw_html):
     if not raw_html:
         return ""
     cleanr = re.compile('<.*?>')
-    cleantext = re.sub(cleanr, '', str(raw_html))
-    return cleantext.strip()
+    return re.sub(cleanr, '', str(raw_html)).strip()
 
-# Gemini API Client initialization
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 ai_client = None
 if GEMINI_API_KEY and genai:
     try:
         ai_client = genai.Client(api_key=GEMINI_API_KEY)
     except Exception as e:
-        print("Gemini client initialization error:", e)
+        print("Gemini init error:", e)
 
 WEB_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 
-# Dynamic Skill Keyword Expander (Generates broad search variations for ANY input skill)
-def generate_skill_query_variations(base_skill):
-    skill = base_skill.strip()
-    
-    # Core search variations
-    intents = [
-        f"{skill}",
-        f"{skill} specialist",
-        f"{skill} expert",
-        f"{skill} agency",
-        f"{skill} freelancer",
-        f"{skill} services",
-        f"hire {skill}",
-        f"need {skill}",
-        f"looking for {skill}",
-        f"{skill} developer" if "dev" not in skill.lower() and "design" not in skill.lower() else skill,
-        f"{skill} designer" if "design" in skill.lower() else skill
-    ]
-    return list(set(intents))
+# ==========================================
+# UPGRADE 5: PORTFOLIO & DEMO MATCHING
+# ==========================================
+DEMO_PORTFOLIOS = {
+    "web": "https://demo-web.agency-preview.com",
+    "clinic": "https://demo-medical.agency-preview.com",
+    "real estate": "https://demo-realty.agency-preview.com",
+    "ecommerce": "https://demo-store.agency-preview.com",
+    "law": "https://demo-lawfirm.agency-preview.com",
+    "seo": "https://demo-seo-report.agency-preview.com",
+    "design": "https://demo-branding.agency-preview.com",
+    "smm": "https://demo-social-kit.agency-preview.com",
+    "default": "https://myportfolio.com"
+}
+
+def get_matching_demo(skill):
+    s = skill.lower()
+    for key, url in DEMO_PORTFOLIOS.items():
+        if key in s:
+            return url
+    return DEMO_PORTFOLIOS["default"]
 
 # ==========================================
-# 1. GOOGLE MAPS & LOCAL BUSINESS ENGINE (50% TARGET)
+# UPGRADE 1 & 2: MINI-AUDIT & CONTACT EXTRACTOR
 # ==========================================
-def fetch_maps_and_local_leads(skill, country):
+def deep_audit_and_scrape(website_url):
+    audit_data = {
+        "emails": [],
+        "phones": [],
+        "audit_notes": [],
+        "has_ssl": True,
+        "is_responsive": True,
+        "has_seo_tags": True
+    }
+    if not website_url or not website_url.startswith("http"):
+        return audit_data
+
+    try:
+        if website_url.startswith("http://"):
+            audit_data["has_ssl"] = False
+            audit_data["audit_notes"].append("❌ Missing SSL Security Certificate (Insecure HTTP)")
+
+        res = requests.get(website_url, headers=WEB_HEADERS, timeout=4)
+        if res.status_code == 200:
+            html = res.text
+
+            # Extract Emails
+            emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', html)
+            audit_data["emails"] = list(set([e for e in emails if not e.endswith(('.png', '.jpg', '.jpeg', '.svg'))]))[:3]
+
+            # Extract WhatsApp/Phones
+            phones = re.findall(r'(\+?\d{1,4}[-.\s]?\(?\d{1,3}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4})', html)
+            audit_data["phones"] = list(set([p for p in phones if len(p) >= 10]))[:2]
+
+            # Check Mobile Viewport Tag
+            if "viewport" not in html.lower():
+                audit_data["is_responsive"] = False
+                audit_data["audit_notes"].append("📱 Website Mobile Viewport Tag Missing")
+
+            # Check Meta Description
+            if 'name="description"' not in html.lower() and "name='description'" not in html.lower():
+                audit_data["has_seo_tags"] = False
+                audit_data["audit_notes"].append("🔍 Meta SEO Description Tag Missing")
+
+    except Exception:
+        audit_data["audit_notes"].append("⚠️ Slow server response time (>4s)")
+
+    return audit_data
+
+# ==========================================
+# CLIENT HOT LEAD EVALUATOR
+# ==========================================
+def evaluate_client_hot_lead(item_data, user_skill):
+    skill = user_skill.lower().strip()
+    extratags = item_data.get("extratags", {}) or {}
+    b_name = item_data.get("display_name", "").lower()
+    
+    website = extratags.get("website") or extratags.get("contact:website", "")
+    has_website = bool(website)
+    has_facebook = "facebook" in extratags or "contact:facebook" in extratags
+    has_email = "email" in extratags or "contact:email" in extratags
+    
+    is_new_launch = any(term in b_name for term in ["new", "express", "grand", "launch", "studio", "center", "prime"])
+
+    audit_info = deep_audit_and_scrape(website) if has_website else {}
+    audit_notes = audit_info.get("audit_notes", [])
+
+    if any(k in skill for k in ["web", "dev", "wordpress", "frontend", "backend", "shopify", "website"]):
+        if not has_website:
+            return True, "🔥 HOT (NO WEBSITE)", "⚠️ Business lacks website. Pitch complete web development setup.", audit_info
+        elif audit_notes:
+            return True, "🔥 HOT (AUDIT ISSUES)", f"⚠️ Audit: {', '.join(audit_notes[:2])}", audit_info
+        elif is_new_launch:
+            return True, "🔥 HOT (NEW LAUNCH)", "⚠️ Freshly opened business! High demand for web setup.", audit_info
+
+    elif any(k in skill for k in ["seo", "marketing", "digital marketing", "ads", "sem"]):
+        if not has_website or not audit_info.get("has_seo_tags", True):
+            return True, "🔥 HOT (ZERO SEO)", "⚠️ Minimal/Missing SEO setup. Local Google Ranking pitch target.", audit_info
+
+    if not has_website or not has_email:
+        return True, "🔥 HOT CLIENT", f"⚠️ High potential target client for {user_skill} services.", audit_info
+
+    return False, "Local Business Client", "Direct local business listing.", audit_info
+
+# ==========================================
+# UPGRADE 3: HIGH-TICKET NICHE & MAPS ENGINE
+# ==========================================
+def fetch_maximum_maps_clients(skill, country, niche):
     leads = []
     country_str = country.strip().title() if country else "Pakistan"
-    query_variations = generate_skill_query_variations(skill)
     seen_titles = set()
 
-    # A. OpenStreetMap / Nominatim Multi-Query API
-    def query_nominatim(q_term):
+    # Niche specific targeting
+    niche_query = f"{niche} " if niche and niche != "All Niches" else ""
+
+    search_queries = [
+        f"{niche_query}{skill} in {country_str}",
+        f"{niche_query}clinics in {country_str}",
+        f"{niche_query}real estate in {country_str}",
+        f"{niche_query}law firms in {country_str}",
+        f"{niche_query}solar contractors in {country_str}",
+        f"{niche_query}roofing HVAC in {country_str}",
+        f"{niche_query}auto dealers in {country_str}",
+        f"{niche_query}restaurants in {country_str}",
+        f"{niche_query}agencies in {country_str}"
+    ]
+
+    def query_nominatim_deep(q_term):
+        results = []
         try:
-            nom_url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(q_term + ' in ' + country_str)}&format=json&addressdetails=1&limit=10"
-            res = requests.get(nom_url, headers=WEB_HEADERS, timeout=4)
+            nom_url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(q_term)}&format=json&addressdetails=1&extratags=1&limit=35"
+            res = requests.get(nom_url, headers=WEB_HEADERS, timeout=6)
             if res.status_code == 200:
                 data = res.json()
-                results = []
                 for item in data:
-                    display_name = item.get("display_name", "Local Business")
+                    display_name = item.get("display_name", "")
                     b_name = display_name.split(",")[0].strip()
-                    if b_name.lower() in seen_titles:
+                    
+                    if b_name.lower() in seen_titles or len(b_name) < 3:
                         continue
                     seen_titles.add(b_name.lower())
-                    
-                    address = ", ".join(display_name.split(",")[1:4]).strip()
+
+                    is_hot, badge_label, desc_text, audit_info = evaluate_client_hot_lead(item, skill)
+
                     lat, lon = item.get("lat"), item.get("lon")
                     maps_link = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}" if lat and lon else f"https://www.google.com/maps/search/{urllib.parse.quote(b_name + ' ' + country_str)}"
-                    
+
+                    extratags = item.get("extratags", {}) or {}
+                    website = extratags.get("website") or extratags.get("contact:website", "")
+                    direct_email = extratags.get("email") or extratags.get("contact:email", "")
+                    if not direct_email and audit_info.get("emails"):
+                        direct_email = audit_info["emails"][0]
+
                     results.append({
-                        "platform": "Google Maps / Business Directory",
-                        "title": f"{b_name} ({country_str})",
-                        "description": f"Verified local entity offering services in {address}. Excellent target for {skill} outreach.",
-                        "contact_info": "Google Maps Listing",
+                        "platform": "Google Maps",
+                        "title": b_name,
+                        "description": desc_text,
+                        "website": website,
+                        "email": direct_email or "Not Available",
+                        "phones": audit_info.get("phones", []),
+                        "audit_notes": audit_info.get("audit_notes", []),
                         "action_link": maps_link,
-                        "time_ago": "Verified Business",
+                        "is_hot": is_hot,
+                        "badge": badge_label,
                         "lead_type": "maps"
                     })
-                return results
-        except Exception as e:
+        except Exception:
             pass
-        return []
+        return results
 
-    # B. Google Business RSS Search Engine
-    def query_google_biz_rss(q_term):
-        try:
-            rss_query = f'"{q_term}" ("company" OR "agency" OR "services" OR "business" OR "office") "{country_str}"'
-            rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote(rss_query)}&hl=en-US&gl=US&ceid=US:en"
-            res = requests.get(rss_url, headers=WEB_HEADERS, timeout=4)
-            if res.status_code == 200:
-                feed = feedparser.parse(res.content)
-                results = []
-                for entry in feed.entries[:6]:
-                    t = clean_html(entry.title)
-                    if t.lower() in seen_titles:
-                        continue
-                    seen_titles.add(t.lower())
-                    results.append({
-                        "platform": "Google Maps & Local Search",
-                        "title": t,
-                        "description": clean_html(getattr(entry, 'summary', ''))[:220] + "...",
-                        "contact_info": "View Business Page",
-                        "action_link": entry.link,
-                        "time_ago": "Recent Listing",
-                        "lead_type": "maps"
-                    })
-                return results
-        except Exception as e:
-            pass
-        return []
-
-    # Threaded Execution across multiple skill variations
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = []
-        for term in query_variations[:5]:
-            futures.append(executor.submit(query_nominatim, term))
-            futures.append(executor.submit(query_google_biz_rss, term))
-
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(query_nominatim_deep, q) for q in search_queries]
         for future in as_completed(futures):
             leads.extend(future.result())
 
     return leads
 
-# ==========================================
-# 2. JOB BOARDS & SOCIAL MEDIA ENGINE (50% TARGET)
-# ==========================================
-def fetch_other_sources_leads(skill, country):
+def fetch_secondary_client_requests(skill, country):
     leads = []
-    country_str = country.strip().title() if country else "Pakistan"
-    query_variations = generate_skill_query_variations(skill)
     seen_titles = set()
 
-    # Custom search patterns for all platforms
-    search_targets = [
-        # Upwork & Job Boards
-        ('site:upwork.com/jobs "{skill}"', "Upwork Project"),
-        ('site:remoteok.com "{skill}"', "RemoteOK Job"),
-        ('site:freelancer.com/projects "{skill}"', "Freelancer Project"),
-        ('site:indeed.com "{skill}" ("hiring" OR "urgent")', "Indeed Job"),
-        ('site:simplyhired.com "{skill}"', "SimplyHired Job"),
-        
-        # Social Networks
-        ('site:facebook.com "{skill}" ("looking for" OR "hiring" OR "need")', "Facebook Client Request"),
-        ('site:linkedin.com/posts "{skill}" ("hiring" OR "looking for developer" OR "looking for designer")', "LinkedIn Direct Post"),
-        ('site:reddit.com ("looking for" OR "hiring") "{skill}"', "Reddit Client Request"),
-        ('site:twitter.com "{skill}" ("hiring" OR "need freelancer")', "Twitter / X Hiring"),
-        ('site:t.me "{skill}" ("job" OR "hiring" OR "client")', "Telegram Jobs")
+    client_search_targets = [
+        (f'site:facebook.com "{skill}" ("looking for freelancer" OR "need agency")', "Facebook Request"),
+        (f'site:upwork.com/jobs "{skill}"', "Upwork Project"),
+        (f'site:linkedin.com/posts "{skill}" ("looking for agency" OR "hiring")', "LinkedIn Request")
     ]
 
-    def execute_rss_search(target_template, platform_name):
+    def execute_client_rss(query, platform_name):
+        results = []
         try:
-            # Build dynamic search string for any user skill
-            formatted_query = target_template.replace("{skill}", skill)
-            url = f"https://news.google.com/rss/search?q={urllib.parse.quote(formatted_query)}&hl=en-US&gl=US&ceid=US:en"
-            
-            res = requests.get(url, headers=WEB_HEADERS, timeout=4)
+            url = f"https://news.google.com/rss/search?q={urllib.parse.quote(query)}&hl=en-US&gl=US&ceid=US:en"
+            res = requests.get(url, headers=WEB_HEADERS, timeout=5)
             if res.status_code == 200:
                 feed = feedparser.parse(res.content)
-                results = []
-                for entry in feed.entries[:5]:
+                for entry in feed.entries[:4]:
                     title = clean_html(entry.title)
+                    summary = clean_html(getattr(entry, 'summary', ''))
+
                     if title.lower() in seen_titles:
                         continue
                     seen_titles.add(title.lower())
@@ -185,27 +259,29 @@ def fetch_other_sources_leads(skill, country):
                     results.append({
                         "platform": platform_name,
                         "title": title,
-                        "description": clean_html(getattr(entry, 'summary', ''))[:220] + "...",
-                        "contact_info": "Direct Platform Link",
+                        "description": summary[:220] + "...",
+                        "website": "",
+                        "email": "Direct Link",
+                        "phones": [],
+                        "audit_notes": [],
                         "action_link": entry.link,
-                        "time_ago": "Recently Posted",
+                        "is_hot": False,
+                        "badge": "Online Client Request",
                         "lead_type": "other"
                     })
-                return results
-        except Exception as e:
+        except Exception:
             pass
-        return []
+        return results
 
-    # Parallel Execution for all job and social networks
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(execute_rss_search, t[0], t[1]) for t in search_targets]
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(execute_client_rss, t[0], t[1]) for t in client_search_targets]
         for future in as_completed(futures):
             leads.extend(future.result())
 
     return leads
 
 # ==========================================
-# 3. MAIN API ENDPOINT WITH 50/50 BALANCER
+# MAIN ROUTE
 # ==========================================
 @app.route('/')
 def home():
@@ -215,74 +291,67 @@ def home():
 def get_leads():
     skill = request.args.get('skill', 'Web Development').strip()
     country = request.args.get('country', 'Pakistan').strip()
+    niche = request.args.get('niche', 'All Niches').strip()
 
-    # Parallel execution for both categories
+    cached = get_from_cache(skill, country, niche)
+    if cached:
+        cached["is_cached"] = True
+        return jsonify(cached)
+
     with ThreadPoolExecutor(max_workers=2) as executor:
-        f_maps = executor.submit(fetch_maps_and_local_leads, skill, country)
-        f_other = executor.submit(fetch_other_sources_leads, skill, country)
+        f_maps = executor.submit(fetch_maximum_maps_clients, skill, country, niche)
+        f_other = executor.submit(fetch_secondary_client_requests, skill, country)
 
         maps_leads = f_maps.result()
         other_leads = f_other.result()
 
-    # Shuffle for varied freshness
-    random.shuffle(maps_leads)
-    random.shuffle(other_leads)
+    hot_clients = [item for item in maps_leads if item.get('is_hot')]
+    normal_maps = [item for item in maps_leads if not item.get('is_hot')]
+    final_clients = hot_clients + normal_maps + other_leads
 
-    # Strict 50% Google Maps / 50% Other Platforms Balancing Logic
-    balanced_results = []
-    max_count = max(len(maps_leads), len(other_leads))
-
-    for i in range(max_count):
-        if i < len(maps_leads):
-            balanced_results.append(maps_leads[i])
-        if i < len(other_leads):
-            balanced_results.append(other_leads[i])
-
-    return jsonify({
+    response_payload = {
         "status": "success",
-        "total_found": len(balanced_results),
-        "maps_count": len(maps_leads),
-        "other_count": len(other_leads),
-        "ratio": "50% Google Maps / Local Businesses | 50% Job Boards & Social Media",
-        "leads": balanced_results
-    })
+        "is_cached": False,
+        "total_found": len(final_clients),
+        "demo_portfolio": get_matching_demo(skill),
+        "leads": final_clients
+    }
+
+    save_to_cache(skill, country, niche, response_payload)
+    return jsonify(response_payload)
 
 # ==========================================
-# 4. AI PROPOSAL GENERATOR
+# UPGRADE 4: 3-STEP FOLLOW-UP AI PITCH GENERATOR
 # ==========================================
 @app.route('/api/ai_pitch', methods=['POST'])
 def generate_ai_pitch():
     data = request.json or {}
     lead_title = data.get("lead_title", "")
     lead_desc = data.get("lead_desc", "")
+    audit_notes = data.get("audit_notes", [])
+    step = data.get("step", "day1")  # day1, day3, day7
     user_portfolio = data.get("portfolio", "https://myportfolio.com")
 
+    audit_str = f" Audit Issues Found: {', '.join(audit_notes)}." if audit_notes else ""
+
+    prompts = {
+        "day1": f"Write a short, high-converting initial pitch for business '{lead_title}'. Context: {lead_desc}.{audit_str} Include Demo: {user_portfolio}",
+        "day3": f"Write a gentle 2-sentence follow-up message for business '{lead_title}' checking if they reviewed the previous message regarding their web/digital setup. Demo: {user_portfolio}",
+        "day7": f"Write a value-add final follow-up offer for '{lead_title}' offering a free 15-min consultation or live mockup preview. Demo: {user_portfolio}"
+    }
+
+    prompt = prompts.get(step, prompts["day1"])
+
     if not ai_client:
-        pitch = f"""Hi there!
-
-I came across your listing regarding "{lead_title}".
-
-I am a specialist in this field and can deliver top-quality results tailored to your requirements. Check out my portfolio here:
-{user_portfolio}
-
-Let's discuss this further to get started immediately!
-
-Best regards,"""
-        return jsonify({"status": "success", "pitch": pitch, "mode": "template"})
-
-    prompt = f"""Write a professional, high-converting outreach proposal for this opportunity:
-Opportunity: {lead_title}
-Details: {lead_desc}
-Portfolio Link: {user_portfolio}
-
-Keep it concise (3 short paragraphs), direct, and persuasive."""
+        fallback = f"Hello {lead_title}!\n\nI noticed some digital improvements for your business. Check our live sample: {user_portfolio}\nLet's connect!"
+        return jsonify({"status": "success", "pitch": fallback, "mode": "template"})
 
     try:
         response = ai_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt
         )
-        pitch_text = response.text if response and hasattr(response, 'text') else "Could not generate proposal."
+        pitch_text = response.text if response and hasattr(response, 'text') else "Proposal generation issue."
         return jsonify({"status": "success", "pitch": pitch_text, "mode": "ai"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -290,4 +359,4 @@ Keep it concise (3 short paragraphs), direct, and persuasive."""
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
-        
+            
