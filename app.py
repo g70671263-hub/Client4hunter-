@@ -51,11 +51,23 @@ if GEMINI_API_KEY and genai:
         print("Gemini init error:", e)
 
 WEB_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    'User-Agent': 'ClientHunterPro/2.5 (Mozilla/5.0 Windows NT 10.0; Win64; x64)'
 }
 
 # ==========================================
-# UPGRADE 5: PORTFOLIO & DEMO MATCHING
+# MAJOR CITIES MAPPING FOR MAXIMUM LOCAL MAPS LEADS
+# ==========================================
+CITIES_MAP = {
+    "Pakistan": ["Lahore", "Karachi", "Islamabad", "Rawalpindi", "Faisalabad", "Multan", "Peshawar", "Sialkot", "Gujranwala"],
+    "United States": ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Miami", "Dallas", "Atlanta"],
+    "United Kingdom": ["London", "Birmingham", "Manchester", "Leeds", "Glasgow", "Liverpool"],
+    "United Arab Emirates": ["Dubai", "Abu Dhabi", "Sharjah", "Ajman"],
+    "Canada": ["Toronto", "Vancouver", "Montreal", "Calgary"],
+    "Australia": ["Sydney", "Melbourne", "Brisbane", "Perth"]
+}
+
+# ==========================================
+# PORTFOLIO & DEMO MATCHING
 # ==========================================
 DEMO_PORTFOLIOS = {
     "web": "https://demo-web.agency-preview.com",
@@ -77,7 +89,7 @@ def get_matching_demo(skill):
     return DEMO_PORTFOLIOS["default"]
 
 # ==========================================
-# UPGRADE 1 & 2: MINI-AUDIT & CONTACT EXTRACTOR
+# FAST MINI-AUDIT & SCRAPER ENGINE
 # ==========================================
 def deep_audit_and_scrape(website_url):
     audit_data = {
@@ -94,15 +106,15 @@ def deep_audit_and_scrape(website_url):
     try:
         if website_url.startswith("http://"):
             audit_data["has_ssl"] = False
-            audit_data["audit_notes"].append("❌ Missing SSL Security Certificate (Insecure HTTP)")
+            audit_data["audit_notes"].append("❌ Missing SSL Certificate (HTTP)")
 
-        res = requests.get(website_url, headers=WEB_HEADERS, timeout=4)
+        res = requests.get(website_url, headers=WEB_HEADERS, timeout=2.5)
         if res.status_code == 200:
             html = res.text
 
             # Extract Emails
             emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', html)
-            audit_data["emails"] = list(set([e for e in emails if not e.endswith(('.png', '.jpg', '.jpeg', '.svg'))]))[:3]
+            audit_data["emails"] = list(set([e for e in emails if not e.lower().endswith(('.png', '.jpg', '.jpeg', '.svg', '.gif'))]))[:3]
 
             # Extract WhatsApp/Phones
             phones = re.findall(r'(\+?\d{1,4}[-.\s]?\(?\d{1,3}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4})', html)
@@ -111,20 +123,20 @@ def deep_audit_and_scrape(website_url):
             # Check Mobile Viewport Tag
             if "viewport" not in html.lower():
                 audit_data["is_responsive"] = False
-                audit_data["audit_notes"].append("📱 Website Mobile Viewport Tag Missing")
+                audit_data["audit_notes"].append("📱 Mobile Viewport Missing")
 
             # Check Meta Description
             if 'name="description"' not in html.lower() and "name='description'" not in html.lower():
                 audit_data["has_seo_tags"] = False
-                audit_data["audit_notes"].append("🔍 Meta SEO Description Tag Missing")
+                audit_data["audit_notes"].append("🔍 Meta Description Missing")
 
     except Exception:
-        audit_data["audit_notes"].append("⚠️ Slow server response time (>4s)")
+        pass
 
     return audit_data
 
 # ==========================================
-# CLIENT HOT LEAD EVALUATOR
+# HOT LEAD EVALUATOR
 # ==========================================
 def evaluate_client_hot_lead(item_data, user_skill):
     skill = user_skill.lower().strip()
@@ -133,7 +145,6 @@ def evaluate_client_hot_lead(item_data, user_skill):
     
     website = extratags.get("website") or extratags.get("contact:website", "")
     has_website = bool(website)
-    has_facebook = "facebook" in extratags or "contact:facebook" in extratags
     has_email = "email" in extratags or "contact:email" in extratags
     
     is_new_launch = any(term in b_name for term in ["new", "express", "grand", "launch", "studio", "center", "prime"])
@@ -143,49 +154,43 @@ def evaluate_client_hot_lead(item_data, user_skill):
 
     if any(k in skill for k in ["web", "dev", "wordpress", "frontend", "backend", "shopify", "website"]):
         if not has_website:
-            return True, "🔥 HOT (NO WEBSITE)", "⚠️ Business lacks website. Pitch complete web development setup.", audit_info
+            return True, "🔥 HOT (NO WEBSITE)", "⚠️ Business lacks a website. Ideal candidate for complete web development setup.", audit_info
         elif audit_notes:
             return True, "🔥 HOT (AUDIT ISSUES)", f"⚠️ Audit: {', '.join(audit_notes[:2])}", audit_info
         elif is_new_launch:
-            return True, "🔥 HOT (NEW LAUNCH)", "⚠️ Freshly opened business! High demand for web setup.", audit_info
+            return True, "🔥 HOT (NEW LAUNCH)", "⚠️ Newly opened business! Urgent requirement for web presence.", audit_info
 
     elif any(k in skill for k in ["seo", "marketing", "digital marketing", "ads", "sem"]):
         if not has_website or not audit_info.get("has_seo_tags", True):
-            return True, "🔥 HOT (ZERO SEO)", "⚠️ Minimal/Missing SEO setup. Local Google Ranking pitch target.", audit_info
+            return True, "🔥 HOT (ZERO SEO)", "⚠️ Minimal or missing SEO setup. Pitch local Google ranking services.", audit_info
 
     if not has_website or not has_email:
-        return True, "🔥 HOT CLIENT", f"⚠️ High potential target client for {user_skill} services.", audit_info
+        return True, "🔥 HOT CLIENT", f"⚠️ High-value target client for {user_skill} services.", audit_info
 
-    return False, "Local Business Client", "Direct local business listing.", audit_info
+    return False, "Local Business Client", "Verified local business listing.", audit_info
 
 # ==========================================
-# UPGRADE 3: HIGH-TICKET NICHE & MAPS ENGINE
+# ENGINE 1: 50+ GOOGLE MAPS LEADS (CITY-LEVEL TARGETING)
 # ==========================================
 def fetch_maximum_maps_clients(skill, country, niche):
     leads = []
     country_str = country.strip().title() if country else "Pakistan"
     seen_titles = set()
 
-    # Niche specific targeting
     niche_query = f"{niche} " if niche and niche != "All Niches" else ""
+    cities = CITIES_MAP.get(country_str, [country_str, "Capital City", "Central District"])
 
-    search_queries = [
-        f"{niche_query}{skill} in {country_str}",
-        f"{niche_query}clinics in {country_str}",
-        f"{niche_query}real estate in {country_str}",
-        f"{niche_query}law firms in {country_str}",
-        f"{niche_query}solar contractors in {country_str}",
-        f"{niche_query}roofing HVAC in {country_str}",
-        f"{niche_query}auto dealers in {country_str}",
-        f"{niche_query}restaurants in {country_str}",
-        f"{niche_query}agencies in {country_str}"
-    ]
+    search_queries = []
+    for city in cities:
+        search_queries.append(f"{niche_query}{skill} in {city} {country_str}")
+        search_queries.append(f"{niche_query}agency in {city} {country_str}")
+        search_queries.append(f"{niche_query}business center in {city} {country_str}")
 
     def query_nominatim_deep(q_term):
         results = []
         try:
-            nom_url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(q_term)}&format=json&addressdetails=1&extratags=1&limit=35"
-            res = requests.get(nom_url, headers=WEB_HEADERS, timeout=6)
+            nom_url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(q_term)}&format=json&addressdetails=1&extratags=1&limit=25"
+            res = requests.get(nom_url, headers=WEB_HEADERS, timeout=5)
             if res.status_code == 200:
                 data = res.json()
                 for item in data:
@@ -224,21 +229,27 @@ def fetch_maximum_maps_clients(skill, country, niche):
             pass
         return results
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=12) as executor:
         futures = [executor.submit(query_nominatim_deep, q) for q in search_queries]
         for future in as_completed(futures):
             leads.extend(future.result())
 
     return leads
 
+# ==========================================
+# ENGINE 2: 50+ WEB, SOCIAL & FREELANCE REQUESTS
+# ==========================================
 def fetch_secondary_client_requests(skill, country):
     leads = []
     seen_titles = set()
 
     client_search_targets = [
-        (f'site:facebook.com "{skill}" ("looking for freelancer" OR "need agency")', "Facebook Request"),
+        (f'site:facebook.com "{skill}" ("looking for freelancer" OR "need agency" OR "hiring")', "Facebook Client Request"),
         (f'site:upwork.com/jobs "{skill}"', "Upwork Project"),
-        (f'site:linkedin.com/posts "{skill}" ("looking for agency" OR "hiring")', "LinkedIn Request")
+        (f'site:linkedin.com/posts "{skill}" ("looking for agency" OR "hiring freelancer")', "LinkedIn Lead"),
+        (f'site:reddit.com/r/forhire "{skill}" ("hiring" OR "looking for")', "Reddit Job Post"),
+        (f'site:twitter.com "{skill}" ("looking for developer" OR "hiring designer")', "X (Twitter) Feed"),
+        (f'"{skill}" client job requirement {country}', "Global Job Board")
     ]
 
     def execute_client_rss(query, platform_name):
@@ -248,7 +259,8 @@ def fetch_secondary_client_requests(skill, country):
             res = requests.get(url, headers=WEB_HEADERS, timeout=5)
             if res.status_code == 200:
                 feed = feedparser.parse(res.content)
-                for entry in feed.entries[:4]:
+                # Fetches up to 12 items per source
+                for entry in feed.entries[:12]:
                     title = clean_html(entry.title)
                     summary = clean_html(getattr(entry, 'summary', ''))
 
@@ -259,21 +271,21 @@ def fetch_secondary_client_requests(skill, country):
                     results.append({
                         "platform": platform_name,
                         "title": title,
-                        "description": summary[:220] + "...",
+                        "description": summary[:220] + "..." if len(summary) > 220 else summary,
                         "website": "",
                         "email": "Direct Link",
                         "phones": [],
                         "audit_notes": [],
                         "action_link": entry.link,
                         "is_hot": False,
-                        "badge": "Online Client Request",
+                        "badge": platform_name,
                         "lead_type": "other"
                     })
         except Exception:
             pass
         return results
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=6) as executor:
         futures = [executor.submit(execute_client_rss, t[0], t[1]) for t in client_search_targets]
         for future in as_completed(futures):
             leads.extend(future.result())
@@ -281,7 +293,7 @@ def fetch_secondary_client_requests(skill, country):
     return leads
 
 # ==========================================
-# MAIN ROUTE
+# MAIN API ROUTE
 # ==========================================
 @app.route('/')
 def home():
@@ -321,7 +333,7 @@ def get_leads():
     return jsonify(response_payload)
 
 # ==========================================
-# UPGRADE 4: 3-STEP FOLLOW-UP AI PITCH GENERATOR
+# AI PITCH & 3-STEP SEQUENCES
 # ==========================================
 @app.route('/api/ai_pitch', methods=['POST'])
 def generate_ai_pitch():
@@ -329,7 +341,7 @@ def generate_ai_pitch():
     lead_title = data.get("lead_title", "")
     lead_desc = data.get("lead_desc", "")
     audit_notes = data.get("audit_notes", [])
-    step = data.get("step", "day1")  # day1, day3, day7
+    step = data.get("step", "day1")
     user_portfolio = data.get("portfolio", "https://myportfolio.com")
 
     audit_str = f" Audit Issues Found: {', '.join(audit_notes)}." if audit_notes else ""
@@ -359,4 +371,4 @@ def generate_ai_pitch():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
-            
+    
